@@ -588,28 +588,39 @@ function setupConn(c){
   conn.on("close", ()=>{ $("collabStatus").textContent="Your partner disconnected."; conn=null; });
   conn.on("error", err=>{ showError("Collaboration connection error."); });
 }
+function resetCollabUI(){
+  $("collabStatus").textContent="Not connected.";
+  $("roomCode").style.display="none";
+  if(peer){ try{ peer.destroy(); }catch(e){} peer=null; }
+  conn=null;
+}
 $("hostBtn").onclick=()=>{
   if(typeof Peer==="undefined"){ showError("Collaboration library didn't load — check your connection."); return; }
   const code=genCode();
-  try{ peer=new Peer(code); }catch(e){ showError("Couldn't start a collaboration session."); return; }
-  $("roomCode").style.display="block"; $("roomCode").textContent="Room code: "+code;
-  $("collabStatus").textContent="Waiting for someone to join with this code...";
-  peer.on("open", ()=>{});
+  try{ peer=new Peer(code, {debug:0}); }catch(e){ showError("Couldn't start a collaboration session."); return; }
+  $("collabStatus").textContent="Connecting...";
+  const slow=setTimeout(()=>{ if(peer && !peer.open) $("collabStatus").textContent="Still connecting — first connection can take a bit longer."; },5000);
+  const timeout=setTimeout(()=>{ if(!peer || !peer.open){ clearTimeout(slow); showError("Couldn't reach the collaboration service after 20 seconds. Check your internet connection and try again."); resetCollabUI(); } },20000);
+  peer.on("open", ()=>{ clearTimeout(slow); clearTimeout(timeout); $("roomCode").style.display="block"; $("roomCode").textContent="Room code: "+code; $("collabStatus").textContent="Waiting for someone to join with this code..."; });
   peer.on("connection", c=>setupConn(c));
-  peer.on("error", err=>{ showError("Collaboration error: "+(err && err.type || err)+". If this page is open inside Claude, this won't connect — try it on GitHub Pages instead."); });
+  peer.on("disconnected", ()=>{ if(peer) try{ peer.reconnect(); }catch(e){} });
+  peer.on("error", err=>{ clearTimeout(slow); clearTimeout(timeout); showError("Collaboration error: "+(err && err.type || err)); resetCollabUI(); });
 };
 $("joinBtn").onclick=()=>{
   if(typeof Peer==="undefined"){ showError("Collaboration library didn't load — check your connection."); return; }
   const code=$("joinCode").value.trim().toUpperCase();
   if(!code){ showError("Enter the room code your partner shared with you."); return; }
-  try{ peer=new Peer(); }catch(e){ showError("Couldn't start a collaboration session."); return; }
+  try{ peer=new Peer({debug:0}); }catch(e){ showError("Couldn't start a collaboration session."); return; }
   $("collabStatus").textContent="Connecting...";
+  const slow=setTimeout(()=>{ if(!conn || !conn.open) $("collabStatus").textContent="Still connecting — first connection can take a bit longer."; },5000);
+  const timeout=setTimeout(()=>{ if(!conn || !conn.open){ clearTimeout(slow); showError("Couldn't connect to that room code after 20 seconds. Check the code and that your partner is still hosting, then try again."); resetCollabUI(); } },20000);
   peer.on("open", ()=>{
-    const c=peer.connect(code);
-    c.on("open", ()=>setupConn(c));
-    c.on("error", ()=>showError("Couldn't connect to that room code."));
+    const c=peer.connect(code, {reliable:true});
+    c.on("open", ()=>{ clearTimeout(slow); clearTimeout(timeout); setupConn(c); });
+    c.on("error", ()=>{ clearTimeout(slow); clearTimeout(timeout); showError("Couldn't connect to that room code."); resetCollabUI(); });
   });
-  peer.on("error", err=>{ showError("Collaboration error: "+(err && err.type || err)+". If this page is open inside Claude, this won't connect — try it on GitHub Pages instead."); });
+  peer.on("disconnected", ()=>{ if(peer) try{ peer.reconnect(); }catch(e){} });
+  peer.on("error", err=>{ clearTimeout(slow); clearTimeout(timeout); showError("Collaboration error: "+(err && err.type || err)); resetCollabUI(); });
 };
 
 (async function init(){
