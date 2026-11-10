@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Scriptinator — made by Nikita Levchenko</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --bg:#ffffff; --panel:#fafafa; --panel2:#f0f0f0; --line:#999;
+  --ink:#111; --ink-dim:#666; --accent:#1555b3; --danger:#b32b1a; --radius:2px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#111; --panel:#181818; --panel2:#222; --line:#555;
+    --ink:#eee; --ink-dim:#999; --accent:#6fa3f7; --danger:#ff8a73;
+    color-scheme: dark;
+  }
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+html{scroll-padding-top:env(safe-area-inset-top,0px);}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:Arial,Helvetica,sans-serif; font-size:14px;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  display:flex; flex-direction:column; height:100%;
+}
+header{padding:10px 14px; border-bottom:2px solid var(--line); background:var(--panel); display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;}
+header h1{font-size:18px; margin:0; font-weight:bold;}
+header .byline{font-size:11px; color:var(--ink-dim);}
+#credits{padding:10px 14px; border-bottom:2px solid var(--line); background:var(--panel2); font-size:16px; font-weight:bold; line-height:1.9;}
+#credits a{color:var(--accent); text-decoration:underline; font-weight:normal;}
+#credits div{font-size:16px;}
+#scriptName{background:var(--bg); border:1px solid var(--line); color:var(--ink); font-size:13px; padding:5px 7px; border-radius:var(--radius); min-width:150px;}
+.spacer{flex:1;}
+button{font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--panel2); color:var(--ink); padding:6px 11px; border-radius:var(--radius); font-size:12.5px;}
+button:hover{background:var(--line); color:var(--bg);}
+button:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+.primary{background:var(--accent); color:#fff; border-color:var(--accent);}
+.primary:hover{opacity:.85; background:var(--accent); color:#fff;}
+.danger{color:var(--danger);}
+#listenBtn.live{background:var(--danger); color:#fff; border-color:var(--danger);}
+#errorBanner{display:none; background:#fde3e0; color:#7a160a; border-bottom:2px solid var(--danger); padding:9px 14px; font-size:12.5px; align-items:center; gap:10px;}
+@media (prefers-color-scheme: dark){ #errorBanner{ background:#3a1712; color:#ffb3a3; } }
+#errorBanner button{margin-left:auto; background:transparent; border:1px solid currentColor; color:inherit;}
+#toolbar{display:flex; gap:4px; padding:6px 14px; border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:wrap;}
+#toolbar button{min-width:30px; font-weight:bold;}
+main{flex:1; display:flex; min-height:0;}
+#sidebar{width:190px; border-right:1px solid var(--line); background:var(--panel); padding:12px; overflow-y:auto; flex-shrink:0;}
+#sidebar h2,aside h2{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); margin:14px 0 8px;}
+#sidebar h2:first-child{margin-top:0;}
+.scriptItem{padding:7px 8px; border-radius:var(--radius); cursor:pointer; font-size:12.5px; margin-bottom:3px; display:flex; justify-content:space-between; gap:6px; border:1px solid transparent;}
+.scriptItem:hover{border-color:var(--line);}
+.scriptItem.active{background:var(--panel2); border-color:var(--line); font-weight:bold;}
+.scriptItem .del{font-size:11px; color:var(--ink-dim); background:none; border:none; padding:0;}
+#editorWrap{flex:1; display:flex; flex-direction:column; min-width:0; padding:14px 18px; overflow-y:auto; position:relative;}
+#scriptText{flex:1; min-height:280px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:var(--radius); padding:14px; font-size:15px; line-height:1.7; font-family:"Courier New",monospace; overflow-y:auto; white-space:pre-wrap;}
+#scriptText[contenteditable="false"]{background:var(--panel);}
+#scriptText:focus{outline:none; border-color:var(--accent);}
+#scriptText:empty:before{content:attr(data-placeholder); color:var(--ink-dim);}
+#scriptText h2{font-size:16px; margin:10px 0 4px;}
+#scriptText .w.said{background:var(--panel2);}
+#scriptText .w.current{background:var(--accent); color:#fff;}
+.hint{font-size:11.5px; color:var(--ink-dim); margin-bottom:8px;}
+#selPopup{position:fixed; z-index:50; display:none;}
+#selPopup button{background:var(--accent); color:#fff; border-color:var(--accent); font-size:12px; padding:5px 9px;}
+aside{width:300px; border-left:1px solid var(--line); background:var(--panel); padding:12px; overflow-y:auto; flex-shrink:0;}
+.charRow{padding:7px 0; border-bottom:1px solid var(--panel2); font-size:12.5px;}
+.charRow .top{display:flex; justify-content:space-between; align-items:center; gap:6px;}
+.charRow select{width:100%; margin-top:5px; font-size:11.5px; padding:3px; border:1px solid var(--line); background:var(--bg); color:var(--ink); border-radius:var(--radius);}
+.charRow button{font-size:11px; padding:3px 8px; flex-shrink:0;}
+#voiceBrowser{max-height:160px; overflow-y:auto; border:1px solid var(--line); padding:6px; margin:6px 0 2px; display:none;}
+#voiceBrowser .vr{display:flex; justify-content:space-between; gap:6px; font-size:11.5px; padding:3px 0;}
+#voiceBrowser .vr button{font-size:10.5px; padding:2px 7px;}
+.cue{border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px; margin-bottom:6px; background:var(--panel2);}
+.cue .word{font-weight:bold; font-size:13px;}
+.cue .meta{font-size:11px; color:var(--ink-dim); margin-top:2px;}
+.cue .row{display:flex; gap:6px; margin-top:7px;}
+.cue button{padding:3px 8px; font-size:11px;}
+.cue.fired{border-color:var(--accent); border-width:2px;}
+#addCueForm{border-top:1px solid var(--line); margin-top:10px; padding-top:10px;}
+#addCueForm label{display:block; font-size:11px; color:var(--ink-dim); margin:7px 0 3px;}
+#addCueForm input[type=text]{width:100%; background:var(--bg); border:1px solid var(--line); color:var(--ink); padding:6px 8px; border-radius:var(--radius); font-size:12.5px;}
+#addCueForm input[type=file]{font-size:11px; color:var(--ink-dim); width:100%;}
+#statusBar{padding:8px 14px; border-top:1px solid var(--line); background:var(--panel); font-size:11.5px; color:var(--ink-dim); display:flex; gap:12px; align-items:center; flex-wrap:wrap;}
+#statusBar b{color:var(--ink);}
+#statusBar .live{color:var(--danger); font-weight:bold;}
+#imgFlash{position:fixed; right:16px; bottom:calc(50px + env(safe-area-inset-bottom,0px)); width:170px; border:2px solid var(--line); overflow:hidden; display:none; background:var(--panel);}
+#imgFlash img{width:100%; display:block;}
+.credit{font-size:11px; color:var(--ink-dim);}
+@media (max-width: 820px){
+  main{flex-direction:column;}
+  #sidebar,aside{width:auto; max-height:180px;}
+  #sidebar{order:2;} #editorWrap{order:1;} aside{order:3;}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Scriptinator</h1>
+  <span class="byline">made by Nikita Levchenko</span>
+  <input id="scriptName" value="Untitled script">
+  <div class="spacer"></div>
+  <button id="pdfBtn">Upload PDF</button>
+  <input type="file" id="pdfInput" accept="application/pdf" hidden>
+  <button id="listenBtn" class="primary">Start listening</button>
+</header>
+<div id="credits">
+  <div>made by Nikita Levchenko</div>
+  <div>GitHub profile: <a href="https://github.com/Nikita7408" target="_blank" rel="noopener">https://github.com/Nikita7408</a></div>
+  <div>YouTube profile (mostly photography): <a href="https://www.youtube.com/@NikitaLevchenko-nl" target="_blank" rel="noopener">https://www.youtube.com/@NikitaLevchenko-nl</a></div>
+  <div>Website: <a href="https://pz69kf.csb.app/" target="_blank" rel="noopener">https://pz69kf.csb.app/</a></div>
+</div>
+<div id="errorBanner"><span id="errorText"></span><button id="errorClose">Dismiss</button></div>
+<div id="toolbar">
+  <button data-cmd="bold" title="Bold">B</button>
+  <button data-cmd="italic" title="Italic"><i>I</i></button>
+  <button data-cmd="underline" title="Underline"><u>U</u></button>
+  <button data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+  <button data-cmd="h2" title="Heading">H</button>
+  <button data-cmd="p" title="Normal text">P</button>
+  <button data-cmd="insertUnorderedList" title="Bullet list">List</button>
+  <button data-cmd="removeFormat" title="Clear formatting">Clear</button>
+</div>
+<main>
+  <div id="sidebar">
+    <h2>Scripts</h2>
+    <div id="scriptList"></div>
+    <button id="newScriptBtn" style="width:100%; margin-top:8px;">New script</button>
+  </div>
+  <div id="editorWrap">
+    <div class="hint">Autosaves in this browser. Use a line like <b>Nikita: hello</b> for dialogue — this detects "Nikita" as a character. Select any text to add it as a sound cue. While listening, the editor locks and highlights along as it hears you.</div>
+    <div id="scriptText" contenteditable="true" data-placeholder="Write or paste your script here..."></div>
+  </div>
+  <aside>
+    <h2>Characters / voiceover test</h2>
+    <button id="browseVoicesBtn" style="width:100%; margin-bottom:6px;">Hear all voices</button>
+    <div id="voiceBrowser"></div>
+    <div id="charList" class="hint">No characters detected yet. Write lines like "Nikita: hello".</div>
+
+    <h2>Sound &amp; image cues</h2>
+    <div id="cueList"></div>
+    <form id="addCueForm">
+      <label for="cueWord">Trigger word or phrase</label>
+      <input type="text" id="cueWord" placeholder="e.g. thunder" required>
+      <label for="cueAudio">Sound effect (plays when heard)</label>
+      <input type="file" id="cueAudio" accept="audio/*">
+      <label for="cueImage">Image (optional, shown when heard)</label>
+      <input type="file" id="cueImage" accept="image/*">
+      <button type="submit" class="primary" style="margin-top:9px; width:100%;">Add cue</button>
+    </form>
+  </aside>
+</main>
+<div id="statusBar">
+  <span id="liveLabel">Not listening</span>
+  <span>Heard: <b id="lastHeard">—</b></span>
+  <span class="hint" id="supportNote"></span>
+  <div class="spacer"></div>
+  <span class="credit">Scriptinator — made by Nikita Levchenko</span>
+</div>
+<div id="imgFlash"><img id="imgFlashImg" alt=""></div>
+<div id="selPopup"><button id="selAddBtn">Add cue?</button></div>
+
+<script>
+(function(){
+"use strict";
+const DB_NAME="cueSheetDB", STORE="scripts";
+function openDB(){ return new Promise((res,rej)=>{ const r=indexedDB.open(DB_NAME,1); r.onupgradeneeded=e=>{ e.target.result.createObjectStore(STORE,{keyPath:"id"}); }; r.onsuccess=e=>res(e.target.result); r.onerror=e=>rej(e.target.error); }); }
+async function dbPut(rec){ try{ const db=await openDB(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,"readwrite"); tx.objectStore(STORE).put(rec); tx.oncomplete=()=>res(true); tx.onerror=()=>rej(tx.error); }); }catch(e){ console.error(e); return false; } }
+async function dbAll(){ try{ const db=await openDB(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,"readonly"); const rq=tx.objectStore(STORE).getAll(); rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); }); }catch(e){ console.error(e); return []; } }
+async function dbDel(id){ try{ const db=await openDB(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,"readwrite"); tx.objectStore(STORE).delete(id); tx.oncomplete=()=>res(true); tx.onerror=()=>rej(tx.error); }); }catch(e){ return false; } }
+
+const $ = id => document.getElementById(id);
+const scriptEl = $("scriptText");
+let scripts = [], current = null, saveTimer = null;
+
+function blankScript(){ return { id:"s"+Date.now()+Math.random().toString(36).slice(2,7), name:"Untitled script", text:"", cues:[], voiceMap:{} }; }
+function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ if(current) dbPut(current); },500); }
+function showError(msg){ $("errorText").textContent=msg; $("errorBanner").style.display="flex"; }
+$("errorClose").onclick=()=>{ $("errorBanner").style.display="none"; };
+
+function renderSidebar(){
+  const list = $("scriptList"); list.innerHTML="";
+  scripts.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  scripts.forEach(s=>{
+    const row=document.createElement("div");
+    row.className="scriptItem"+(current && s.id===current.id?" active":"");
+    const name=document.createElement("span");
+    name.textContent=s.name||"Untitled script";
+    name.style.overflow="hidden"; name.style.textOverflow="ellipsis"; name.style.whiteSpace="nowrap";
+    row.appendChild(name);
+    const del=document.createElement("button"); del.className="del"; del.textContent="Delete"; del.title="Delete script";
+    del.onclick=async e=>{ e.stopPropagation(); if(!confirm('Delete "'+(s.name||"Untitled")+'"?')) return; await dbDel(s.id); scripts=scripts.filter(x=>x.id!==s.id); if(current && current.id===s.id){ current=scripts[0]||null; if(!current){ current=blankScript(); scripts.push(current); } loadCurrent(); } renderSidebar(); };
+    row.appendChild(del);
+    row.onclick=()=>{ current=s; loadCurrent(); renderSidebar(); };
+    list.appendChild(row);
+  });
+}
+
+function loadCurrent(){
+  if(!current) return;
+  if(!current.voiceMap) current.voiceMap={};
+  $("scriptName").value=current.name||"Untitled script";
+  scriptEl.innerHTML=current.text||"";
+  renderCharacters();
+  renderCues();
+}
+
+function getPlainText(){ return scriptEl.innerText || ""; }
+
+// --- voices ---
+let voices=[];
+function loadVoices(){ voices=speechSynthesis.getVoices()||[]; renderCharacters(); renderVoiceBrowser(); }
+if('speechSynthesis' in window){ speechSynthesis.onvoiceschanged=loadVoices; loadVoices(); }
+
+function renderVoiceBrowser(){
+  const box=$("voiceBrowser");
+  if(!voices.length){ box.innerHTML='<div class="hint">No voices available in this browser yet.</div>'; return; }
+  box.innerHTML="";
+  voices.forEach(v=>{
+    const row=document.createElement("div"); row.className="vr";
+    const label=document.createElement("span"); label.textContent=v.name+" ("+v.lang+")";
+    const btn=document.createElement("button"); btn.textContent="Play";
+    btn.onclick=()=>{ speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance("This is "+v.name+"."); u.voice=v; speechSynthesis.speak(u); };
+    row.appendChild(label); row.appendChild(btn); box.appendChild(row);
+  });
+}
+$("browseVoicesBtn").onclick=()=>{ const box=$("voiceBrowser"); box.style.display = box.style.display==="block" ? "none" : "block"; };
+
+// --- characters ---
+function parseCharacters(text){
+  const re=/^\s*([A-Za-z][A-Za-z.'\- ]{0,28}):\s*(.+)$/;
+  const map=new Map();
+  text.split(/\n/).forEach(line=>{
+    const m=line.match(re);
+    if(m){ const name=m[1].trim(); const key=name.toLowerCase(); if(!map.has(key)) map.set(key,{name,sample:m[2].trim()}); }
+  });
+  return Array.from(map.values());
+}
+function renderCharacters(){
+  const chars=parseCharacters(getPlainText());
+  const box=$("charList");
+  if(!chars.length){ box.className="hint"; box.innerHTML='No characters detected yet. Write lines like "Nikita: hello".'; return; }
+  box.className=""; box.innerHTML="";
+  chars.forEach(c=>{
+    const key=c.name.toLowerCase();
+    const row=document.createElement("div"); row.className="charRow";
+    const top=document.createElement("div"); top.className="top";
+    const label=document.createElement("span"); label.textContent=c.name;
+    const btn=document.createElement("button"); btn.textContent="Test voice";
+    top.appendChild(label); top.appendChild(btn); row.appendChild(top);
+    const sel=document.createElement("select");
+    if(voices.length){
+      voices.forEach((v,i)=>{ const opt=document.createElement("option"); opt.value=v.voiceURI; opt.textContent=v.name+" ("+v.lang+")"; sel.appendChild(opt); });
+      const saved=current.voiceMap[key];
+      if(saved && voices.some(v=>v.voiceURI===saved)) sel.value=saved;
+      sel.onchange=()=>{ current.voiceMap[key]=sel.value; current.updatedAt=Date.now(); scheduleSave(); };
+    } else {
+      const opt=document.createElement("option"); opt.textContent="No voices available"; sel.appendChild(opt); sel.disabled=true;
+    }
+    row.appendChild(sel);
+    btn.onclick=()=>{
+      if(!('speechSynthesis' in window)){ showError("Voice preview isn't supported in this browser."); return; }
+      const u=new SpeechSynthesisUtterance(c.sample || "This character has no lines yet.");
+      const chosen=voices.find(v=>v.voiceURI===sel.value);
+      if(chosen) u.voice=chosen;
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    };
+    box.appendChild(row);
+  });
+}
+
+function renderCues(){
+  const list=$("cueList"); list.innerHTML="";
+  if(!current.cues || !current.cues.length){ const p=document.createElement("div"); p.className="hint"; p.textContent="No cues yet. Add a trigger word below, or select text in the script."; list.appendChild(p); return; }
+  current.cues.forEach(c=>{
+    const div=document.createElement("div"); div.className="cue"; div.id="cue-"+c.id;
+    const w=document.createElement("div"); w.className="word"; w.textContent='"'+c.word+'"'; div.appendChild(w);
+    const meta=document.createElement("div"); meta.className="meta";
+    const parts=[]; if(c.audioData) parts.push("sound"); if(c.imageData) parts.push("image");
+    meta.textContent=parts.length?parts.join(" + "):"no media attached"; div.appendChild(meta);
+    const row=document.createElement("div"); row.className="row";
+    const test=document.createElement("button"); test.textContent="Test"; test.onclick=()=>fireCue(c);
+    const rm=document.createElement("button"); rm.textContent="Remove"; rm.className="danger";
+    rm.onclick=()=>{ current.cues=current.cues.filter(x=>x.id!==c.id); scheduleSave(); renderCues(); };
+    row.appendChild(test); row.appendChild(rm); div.appendChild(row); list.appendChild(div);
+  });
+}
+
+function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
+
+$("scriptName").addEventListener("input", e=>{ current.name=e.target.value; current.updatedAt=Date.now(); scheduleSave(); renderSidebar(); });
+scriptEl.addEventListener("input", ()=>{ if(scriptEl.contentEditable==="false") return; current.text=scriptEl.innerHTML; current.updatedAt=Date.now(); scheduleSave(); renderCharacters(); });
+
+$("newScriptBtn").onclick=()=>{ const s=blankScript(); s.updatedAt=Date.now(); scripts.push(s); dbPut(s); current=s; loadCurrent(); renderSidebar(); };
+
+$("addCueForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const word=$("cueWord").value.trim(); if(!word) return;
+  const audioFile=$("cueAudio").files[0], imageFile=$("cueImage").files[0];
+  const cue={id:"c"+Date.now()+Math.random().toString(36).slice(2,6), word, audioData:null, imageData:null};
+  try{
+    if(audioFile) cue.audioData=await fileToDataURL(audioFile);
+    if(imageFile) cue.imageData=await fileToDataURL(imageFile);
+  }catch(err){ showError("Could not read that file — try a smaller one."); return; }
+  current.cues=current.cues||[]; current.cues.push(cue); current.updatedAt=Date.now();
+  scheduleSave(); renderCues(); e.target.reset();
+});
+
+$("pdfBtn").onclick=()=>$("pdfInput").click();
+$("pdfInput").addEventListener("change", async e=>{
+  const file=e.target.files[0]; if(!file) return;
+  if(typeof pdfjsLib==="undefined"){ showError("PDF reader didn't load — check your connection and try again."); return; }
+  pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+  try{
+    const buf=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+    let html="";
+    for(let p=1;p<=pdf.numPages;p++){
+      const page=await pdf.getPage(p);
+      const content=await page.getTextContent();
+      const lines={};
+      content.items.forEach(it=>{ const y=Math.round(it.transform[5]); (lines[y]=lines[y]||[]).push(it.str); });
+      Object.keys(lines).sort((a,b)=>b-a).forEach(y=>{ const t=lines[y].join(" ").trim(); if(t) html+="<p>"+t.replace(/&/g,"&amp;").replace(/</g,"&lt;")+"</p>"; });
+    }
+    scriptEl.innerHTML += html;
+    current.text=scriptEl.innerHTML;
+    if(current.name==="Untitled script"){ current.name=file.name.replace(/\.pdf$/i,""); $("scriptName").value=current.name; }
+    current.updatedAt=Date.now(); scheduleSave(); renderSidebar(); renderCharacters();
+  }catch(err){ showError("Couldn't read that PDF."); console.error(err); }
+  e.target.value="";
+});
+
+document.querySelectorAll("#toolbar [data-cmd]").forEach(btn=>{
+  btn.addEventListener("mousedown", e=>e.preventDefault());
+  btn.addEventListener("click", ()=>{
+    if(scriptEl.contentEditable==="false") return;
+    const cmd=btn.dataset.cmd;
+    if(cmd==="h2") document.execCommand("formatBlock", false, "h2");
+    else if(cmd==="p") document.execCommand("formatBlock", false, "p");
+    else document.execCommand(cmd, false, null);
+    scriptEl.focus();
+    current.text=scriptEl.innerHTML; scheduleSave();
+  });
+});
+
+const popup=$("selPopup");
+function hidePopup(){ popup.style.display="none"; }
+function showSelPopup(){
+  if(scriptEl.contentEditable==="false"){ hidePopup(); return; }
+  const sel=window.getSelection();
+  if(!sel || sel.isCollapsed || sel.rangeCount===0 || !scriptEl.contains(sel.anchorNode)){ hidePopup(); return; }
+  const text=sel.toString().trim();
+  if(!text){ hidePopup(); return; }
+  const rect=sel.getRangeAt(0).getBoundingClientRect();
+  if(!rect.width && !rect.height){ hidePopup(); return; }
+  popup.style.left=Math.max(8, rect.left)+"px";
+  popup.style.top=Math.max(8, rect.top-34)+"px";
+  popup.dataset.text=text;
+  popup.style.display="block";
+}
+scriptEl.addEventListener("mouseup", showSelPopup);
+scriptEl.addEventListener("keyup", showSelPopup);
+document.addEventListener("mousedown", e=>{ if(e.target!==$("selAddBtn")) hidePopup(); });
+$("selAddBtn").addEventListener("click", ()=>{
+  $("cueWord").value=popup.dataset.text||"";
+  hidePopup();
+  $("cueWord").scrollIntoView({behavior:"smooth", block:"center"});
+  $("cueWord").focus();
+});
+
+// --- word-by-word highlight while listening ---
+let savedHTML=null, wordSpans=[], scriptCursor=0;
+function norm(s){ return s.toLowerCase().replace(/[^\w\s']/g,"").trim(); }
+function wrapWordsForHighlight(){
+  savedHTML=scriptEl.innerHTML;
+  const walker=document.createTreeWalker(scriptEl, NodeFilter.SHOW_TEXT);
+  const nodes=[]; while(walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(node=>{
+    const parts=node.textContent.split(/(\s+)/);
+    const frag=document.createDocumentFragment();
+    parts.forEach(part=>{
+      if(part===""){ return; }
+      if(/^\s+$/.test(part)){ frag.appendChild(document.createTextNode(part)); }
+      else{
+        const span=document.createElement("span");
+        span.className="w"; span.dataset.norm=norm(part);
+        span.textContent=part;
+        frag.appendChild(span);
+      }
+    });
+    node.parentNode.replaceChild(frag, node);
+  });
+  wordSpans=Array.from(scriptEl.querySelectorAll(".w"));
+  scriptCursor=0;
+}
+function unwrapWords(){
+  if(savedHTML!==null){ scriptEl.innerHTML=savedHTML; savedHTML=null; }
+  wordSpans=[]; scriptCursor=0;
+}
+function advanceHighlight(spokenWord){
+  if(!wordSpans.length || !spokenWord) return;
+  const lookahead=40;
+  for(let k=scriptCursor; k<Math.min(wordSpans.length, scriptCursor+lookahead); k++){
+    if(wordSpans[k].dataset.norm===spokenWord){
+      for(let j=scriptCursor; j<k; j++) wordSpans[j].classList.add("said");
+      wordSpans.forEach(s=>s.classList.remove("current"));
+      wordSpans[k].classList.add("current","said");
+      wordSpans[k].scrollIntoView({block:"center", behavior:"smooth"});
+      scriptCursor=k+1;
+      return;
+    }
+  }
+}
+
+// --- live listening & cue matching ---
+let recognition=null, listening=false, committed=[], lastFired={};
+function fireCue(cue){
+  const el=$("cue-"+cue.id);
+  if(el){ el.classList.add("fired"); setTimeout(()=>el.classList.remove("fired"),1200); }
+  if(cue.audioData){ try{ new Audio(cue.audioData).play().catch(()=>{}); }catch(e){} }
+  if(cue.imageData){
+    const flash=$("imgFlash"); $("imgFlashImg").src=cue.imageData;
+    flash.style.display="block"; clearTimeout(flash._t);
+    flash._t=setTimeout(()=>{ flash.style.display="none"; },3500);
+  }
+}
+function checkWords(wordList){
+  const joined=" "+wordList.join(" ")+" ";
+  (current.cues||[]).forEach(cue=>{
+    const cw=norm(cue.word); if(!cw) return;
+    if(joined.includes(" "+cw+" ")){
+      const now=Date.now();
+      if(!lastFired[cue.id] || now-lastFired[cue.id] > 2500){ lastFired[cue.id]=now; fireCue(cue); }
+    }
+  });
+}
+function setupRecognition(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR) return null;
+  const rec=new SR();
+  rec.continuous=true; rec.interimResults=true; rec.lang="en-US";
+  rec.onresult=e=>{
+    let interim=[];
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i];
+      const words=norm(r[0].transcript).split(/\s+/).filter(Boolean);
+      if(r.isFinal){ committed=committed.concat(words).slice(-20); words.forEach(advanceHighlight); }
+      else{ interim=interim.concat(words); if(words.length) advanceHighlight(words[words.length-1]); }
+    }
+    const full=committed.concat(interim).slice(-24);
+    $("lastHeard").textContent=full.slice(-12).join(" ")||"—";
+    checkWords(full);
+  };
+  rec.onerror=e=>{
+    console.warn("recognition error", e.error);
+    if(e.error==="not-allowed" || e.error==="service-not-allowed"){ stopListening(); showError("Microphone access is blocked for this page. Check the lock/site-settings icon in your address bar, allow microphone access, then press Start listening again."); }
+    else if(e.error==="network"){ stopListening(); showError("Speech recognition service is unreachable here. If this page is open inside Claude, open it on your own site (e.g. Cloudflare Pages) in Chrome instead."); }
+    else if(e.error==="no-speech"){ /* ignore, auto-restarts */ }
+    else{ showError("Speech recognition stopped ("+e.error+")."); }
+  };
+  rec.onend=()=>{ if(listening){ try{ rec.start(); }catch(e){} } };
+  return rec;
+}
+async function startListening(){
+  if(!recognition) recognition=setupRecognition();
+  if(!recognition){ showError("This browser doesn't support live speech recognition. Try Chrome on desktop or Android."); return; }
+  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      stream.getTracks().forEach(t=>t.stop());
+    }catch(err){
+      showError("Microphone access was blocked or denied. Allow microphone access for this page in your browser settings, then try again.");
+      return;
+    }
+  }
+  listening=true; committed=[]; lastFired={};
+  wrapWordsForHighlight();
+  scriptEl.contentEditable="false";
+  try{ recognition.start(); }catch(e){}
+  $("listenBtn").textContent="Stop listening"; $("listenBtn").classList.add("live");
+  $("liveLabel").innerHTML='<span class="live">LISTENING</span>';
+}
+function stopListening(){
+  listening=false;
+  if(recognition){ try{ recognition.stop(); }catch(e){} }
+  unwrapWords();
+  scriptEl.contentEditable="true";
+  $("listenBtn").textContent="Start listening"; $("listenBtn").classList.remove("live");
+  $("liveLabel").textContent="Not listening";
+}
+$("listenBtn").onclick=()=> listening?stopListening():startListening();
+if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){ $("supportNote").textContent="Live listening needs Chrome (desktop or Android)."; }
+
+(async function init(){
+  scripts=await dbAll();
+  if(!scripts.length){ current=blankScript(); current.updatedAt=Date.now(); scripts.push(current); await dbPut(current); }
+  else{ scripts.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)); current=scripts[0]; }
+  loadCurrent(); renderSidebar();
+})();
+})();
+</script>
+</body>
+</html>
