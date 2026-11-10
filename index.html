@@ -64,9 +64,12 @@ main{flex:1; display:flex; min-height:0;}
 #scriptText:focus{outline:none; border-color:var(--accent);}
 #scriptText:empty:before{content:attr(data-placeholder); color:var(--ink-dim);}
 #scriptText h2{font-size:16px; margin:10px 0 4px;}
-#scriptText .w.said{background:var(--panel2);}
-#scriptText .w.current{background:var(--accent); color:#fff;}
-#scriptText .line-current{background:rgba(21,85,179,.12); outline:1px dashed var(--accent);}
+#scriptText .w{border-radius:3px; transition:background-color .08s;}
+#scriptText .w.said{background:#d9eaff !important; color:#123b70 !important; border-radius:3px;}
+#scriptText .w.current{background:#1976ff !important; color:#ffffff !important; outline:2px solid #0756c9; border-radius:3px; box-shadow:0 0 0 3px rgba(25,118,255,.25); font-weight:900; text-decoration:underline; text-decoration-thickness:2px;}
+#scriptText .line-current{background:rgba(25,118,255,.13); outline:1px dashed #1976ff;}
+#trackingWord{display:inline-block; padding:3px 7px; border-radius:5px; background:#1976ff; color:#fff !important; font-weight:700; min-width:110px;}
+#statusBar .tracking-label{color:#1976ff; font-weight:700;}
 .hint{font-size:11.5px; color:var(--ink-dim); margin-bottom:8px;}
 #selPopup{position:fixed; z-index:50; display:none;}
 #selPopup button{background:var(--accent); color:#fff; border-color:var(--accent); font-size:12px; padding:5px 9px;}
@@ -143,14 +146,14 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
       <div id="roomCode" style="display:none;"></div>
       <input type="text" id="joinCode" placeholder="Enter a room code">
       <button id="joinBtn">Join session</button>
-      <div id="collabStatus">Not connected.</div>
+      <div id="collabStatus">Not connected.</div><div id="myNameLabel" style="margin-top:5px;color:var(--ink-dim);">Your name: not set</div>
     </div>
     <h2>Scripts</h2>
     <div id="scriptList"></div>
     <button id="newScriptBtn" style="width:100%; margin-top:8px;">New script</button>
   </div>
   <div id="editorWrap">
-    <div class="hint">Autosaves in this browser. Use a line like <b>Nikita: hello</b> for dialogue — this detects "Nikita" as a character. Select any text to add it as a sound cue. While listening, the editor locks and highlights along as it hears you.</div>
+    <div class="hint">Autosaves in this browser. Use a line like <b>Nikita: hello</b> for dialogue — this detects "Nikita" as a character. Select any text to add it as a sound cue. While listening, the editor locks and highlights words as speech recognition confirms them.</div>
     <div id="scriptText" contenteditable="true" data-placeholder="Write or paste your script here..."></div>
   </div>
   <aside>
@@ -162,8 +165,9 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
     <h2>Sound &amp; image cues</h2>
     <div id="cueList"></div>
     <form id="addCueForm">
-      <label for="cueWord">Trigger word or phrase</label>
-      <input type="text" id="cueWord" placeholder="e.g. thunder" required>
+      <label for="cueWord">Trigger phrase (at least 4 words)</label>
+      <input type="text" id="cueWord" placeholder="e.g. please open the old wooden door" minlength="7" required>
+      <div class="hint">Use a phrase of 4 or more words for more accurate matching. Single-word triggers are not allowed.</div>
       <label for="cueAudio">Sound effect (plays when heard)</label>
       <input type="file" id="cueAudio" accept="audio/*">
       <label for="cueImage">Image (optional, shown when heard)</label>
@@ -175,6 +179,7 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
 <div id="statusBar">
   <span id="liveLabel">Not listening</span>
   <span>Heard: <b id="lastHeard">—</b></span>
+  <span class="tracking-label">Tracking: <b id="trackingWord">waiting for speech</b></span>
   <span class="hint" id="supportNote"></span>
   <div class="spacer"></div>
   <span class="credit">Scriptinator — made by Nikita Levchenko</span>
@@ -249,7 +254,46 @@ function renderVoiceBrowser(){
     row.appendChild(label); row.appendChild(btn); box.appendChild(row);
   });
 }
-$("browseVoicesBtn").onclick=()=>{ const box=$("voiceBrowser"); box.style.display = box.style.display==="block" ? "none" : "block"; };
+let voiceDemoRunning=false;
+let scriptPlaybackQueue=[];
+function stopScriptVoiceDemo(){
+  voiceDemoRunning=false;
+  scriptPlaybackQueue=[];
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+  $("browseVoicesBtn").textContent="Read script aloud";
+}
+$("browseVoicesBtn").textContent="Read script aloud";
+$("browseVoicesBtn").onclick=()=>{
+  if(!('speechSynthesis' in window)){ showError("Voice playback is not supported in this browser."); return; }
+  if(voiceDemoRunning){ stopScriptVoiceDemo(); return; }
+  const text=getPlainText().trim();
+  if(!text){ showError("Add some script text before playing it."); return; }
+  loadVoices();
+  voiceDemoRunning=true;
+  $("browseVoicesBtn").textContent="Stop script playback";
+  const voiceFor=(name)=>{
+    const chosenUri=current.voiceMap && current.voiceMap[name.toLowerCase()];
+    return voices.find(v=>v.voiceURI===chosenUri) || null;
+  };
+  // Keep dialogue labels out of spoken audio and apply each character's selected voice.
+  const lines=text.split(/\n/).map(line=>{
+    const m=line.match(/^\s*([A-Za-z][A-Za-z.'\- ]{0,28}):\s*(.*)$/);
+    return m ? {text:m[2].trim(), voice:voiceFor(m[1].trim())} : {text:line.trim(), voice:null};
+  }).filter(item=>item.text);
+  scriptPlaybackQueue=lines.slice();
+  const playNext=()=>{
+    if(!voiceDemoRunning) return;
+    const item=scriptPlaybackQueue.shift();
+    if(!item){ stopScriptVoiceDemo(); return; }
+    const u=new SpeechSynthesisUtterance(item.text);
+    if(item.voice) u.voice=item.voice;
+    u.lang=(item.voice && item.voice.lang) || "en-US";
+    u.onend=playNext;
+    u.onerror=playNext;
+    speechSynthesis.speak(u);
+  };
+  playNext();
+};
 
 // --- characters ---
 function parseCharacters(text){
@@ -284,11 +328,18 @@ function renderCharacters(){
     }
     row.appendChild(sel);
     btn.onclick=()=>{
-      if(!('speechSynthesis' in window)){ showError("Voice preview isn't supported in this browser."); return; }
-      const u=new SpeechSynthesisUtterance(c.sample || "This character has no lines yet.");
+      if(!('speechSynthesis' in window)){ showError("Voice playback isn't supported in this browser."); return; }
+      const lines=getPlainText().split(/\n/).map(line=>{
+        const m=line.match(/^\s*([A-Za-z][A-Za-z.'\- ]{0,28}):\s*(.*)$/);
+        return m && m[1].trim().toLowerCase()===key ? m[2].trim() : "";
+      }).filter(Boolean);
+      if(!lines.length){ showError("No script lines were found for "+c.name+"."); return; }
+      speechSynthesis.cancel();
+      const u=new SpeechSynthesisUtterance(lines.join(" "));
       const chosen=voices.find(v=>v.voiceURI===sel.value);
       if(chosen) u.voice=chosen;
-      speechSynthesis.cancel(); speechSynthesis.speak(u);
+      u.lang=(chosen && chosen.lang) || "en-US";
+      speechSynthesis.speak(u);
     };
     box.appendChild(row);
   });
@@ -298,7 +349,7 @@ function fmtTime(sec){ if(!isFinite(sec)) sec=0; const m=Math.floor(sec/60), s=M
 
 function renderCues(){
   const list=$("cueList"); list.innerHTML=""; soundBars=[];
-  if(!current.cues || !current.cues.length){ const p=document.createElement("div"); p.className="hint"; p.textContent="No cues yet. Add a trigger word below, or select text in the script."; list.appendChild(p); return; }
+  if(!current.cues || !current.cues.length){ const p=document.createElement("div"); p.className="hint"; p.textContent="No cues yet. Add a trigger phrase of at least four words, or select four or more words in the script."; list.appendChild(p); return; }
   current.cues.forEach(c=>{
     const div=document.createElement("div"); div.className="cue"; div.id="cue-"+c.id;
     const w=document.createElement("div"); w.className="word"; w.textContent='"'+c.word+'"'; div.appendChild(w);
@@ -340,6 +391,8 @@ $("newScriptBtn").onclick=()=>{ const s=blankScript(); s.updatedAt=Date.now(); s
 $("addCueForm").addEventListener("submit", async e=>{
   e.preventDefault();
   const word=$("cueWord").value.trim(); if(!word) return;
+  const wordCount=norm(word).split(/\s+/).filter(Boolean).length;
+  if(wordCount<4){ showError("Trigger phrases must contain at least 4 words. Please enter a longer phrase."); return; }
   const audioFile=$("cueAudio").files[0], imageFile=$("cueImage").files[0];
   const cue={id:"c"+Date.now()+Math.random().toString(36).slice(2,6), word, audioData:null, imageData:null};
   try{
@@ -406,7 +459,9 @@ scriptEl.addEventListener("mouseup", showSelPopup);
 scriptEl.addEventListener("keyup", showSelPopup);
 document.addEventListener("mousedown", e=>{ if(e.target!==$("selAddBtn")) hidePopup(); });
 $("selAddBtn").addEventListener("click", ()=>{
-  $("cueWord").value=popup.dataset.text||"";
+  const selected=popup.dataset.text||"";
+  if(norm(selected).split(/\s+/).filter(Boolean).length<4){ showError("Select at least 4 words to use them as a trigger phrase."); hidePopup(); return; }
+  $("cueWord").value=selected;
   hidePopup();
   $("cueWord").scrollIntoView({behavior:"smooth", block:"center"});
   $("cueWord").focus();
@@ -414,8 +469,9 @@ $("selAddBtn").addEventListener("click", ()=>{
 
 // --- word-by-word highlight while listening ---
 let savedHTML=null, wordSpans=[], scriptCursor=0;
-function norm(s){ return s.toLowerCase().replace(/[^\w\s']/g,"").trim(); }
+function norm(s){ return String(s||"").toLowerCase().replace(/[^\p{L}\p{N}\s']/gu," ").replace(/\s+/g," ").trim(); }
 function wrapWordsForHighlight(){
+  if(savedHTML!==null) return;
   savedHTML=scriptEl.innerHTML;
   const walker=document.createTreeWalker(scriptEl, NodeFilter.SHOW_TEXT);
   const nodes=[]; while(walker.nextNode()) nodes.push(walker.currentNode);
@@ -423,7 +479,7 @@ function wrapWordsForHighlight(){
     const parts=node.textContent.split(/(\s+)/);
     const frag=document.createDocumentFragment();
     parts.forEach(part=>{
-      if(part===""){ return; }
+      if(part==="") return;
       if(/^\s+$/.test(part)){ frag.appendChild(document.createTextNode(part)); }
       else{
         const span=document.createElement("span");
@@ -432,33 +488,48 @@ function wrapWordsForHighlight(){
         frag.appendChild(span);
       }
     });
-    node.parentNode.replaceChild(frag, node);
+    if(node.parentNode) node.parentNode.replaceChild(frag,node);
   });
   wordSpans=Array.from(scriptEl.querySelectorAll(".w"));
+  wordSpans.forEach(el=>{el.classList.remove("said","current");});
   scriptCursor=0;
+  $("trackingWord").textContent=wordSpans.length ? "listening — waiting for confirmed words" : "no script text to track";
 }
 function unwrapWords(){
   if(savedHTML!==null){ scriptEl.innerHTML=savedHTML; savedHTML=null; }
   wordSpans=[]; scriptCursor=0;
+  $("trackingWord").textContent="waiting for speech";
 }
 function advanceHighlight(spokenWord){
   if(!wordSpans.length || !spokenWord) return;
-  const lookahead=40;
-  for(let k=scriptCursor; k<Math.min(wordSpans.length, scriptCursor+lookahead); k++){
-    if(wordSpans[k].dataset.norm===spokenWord){
-      for(let j=scriptCursor; j<k; j++) wordSpans[j].classList.add("said");
-      wordSpans.forEach(s=>s.classList.remove("current"));
-      wordSpans[k].classList.add("current","said");
-      wordSpans[k].scrollIntoView({block:"center", behavior:"smooth"});
-      scriptEl.querySelectorAll(".line-current").forEach(el=>el.classList.remove("line-current"));
-      const block=wordSpans[k].closest("p,div,h2,li");
-      if(block && block!==scriptEl) block.classList.add("line-current");
-      scriptCursor=k+1;
-      return;
-    }
+  const token=norm(spokenWord);
+  if(!token) return;
+  // Look forward through a generous local window. We never search behind the
+  // cursor, so repeated words in long scripts advance in order, not backwards.
+  const start=Math.min(scriptCursor, wordSpans.length-1);
+  const end=Math.min(wordSpans.length, start+36);
+  let found=-1;
+  for(let k=start;k<end;k++){
+    if(wordSpans[k].dataset.norm===token){ found=k; break; }
   }
+  if(found<0){
+    $("trackingWord").textContent="heard “"+spokenWord+"” — looking for next script match";
+    return;
+  }
+  for(let j=scriptCursor;j<found;j++) wordSpans[j].classList.add("said");
+  wordSpans.forEach(el=>el.classList.remove("current"));
+  wordSpans[found].classList.add("current","said");
+  $("trackingWord").textContent="▶ "+wordSpans[found].textContent+" ("+(found+1)+"/"+wordSpans.length+")";
+  // Scroll only the preview container, not the whole page.
+  const top=wordSpans[found].offsetTop-scriptEl.offsetTop;
+  if(top<scriptEl.scrollTop || top>scriptEl.scrollTop+scriptEl.clientHeight-45){
+    scriptEl.scrollTop=Math.max(0,top-scriptEl.clientHeight/2);
+  }
+  scriptEl.querySelectorAll(".line-current").forEach(el=>el.classList.remove("line-current"));
+  const block=wordSpans[found].parentElement;
+  if(block && block!==scriptEl && /^(P|DIV|LI|H[1-6])$/.test(block.tagName)) block.classList.add("line-current");
+  scriptCursor=found+1;
 }
-
 // --- sound control ---
 let soundBars=[], activeAudio=null;
 function stopAllSound(){
@@ -473,20 +544,42 @@ let recognition=null, listening=false, committed=[], lastFired={}, interimTracke
 function fireCue(cue){
   const el=$("cue-"+cue.id);
   if(el){ el.classList.add("fired"); setTimeout(()=>el.classList.remove("fired"),1200); }
-  if(cue.audioData){ try{ stopAllSound(); activeAudio=new Audio(cue.audioData); activeAudio.play().catch(()=>{}); }catch(e){} }
+  if(cue.audioData){
+    // Replace only the previous cue audio. Do not cancel speech synthesis or
+    // touch the speech recognizer: tracking must continue while effects play.
+    try{ if(activeAudio){ activeAudio.pause(); activeAudio.currentTime=0; } }catch(e){}
+    try{ activeAudio=new Audio(cue.audioData); activeAudio.play().catch(()=>{}); }catch(e){}
+  }
   if(cue.imageData){
     const flash=$("imgFlash"); $("imgFlashImg").src=cue.imageData;
     flash.style.display="block"; clearTimeout(flash._t);
     flash._t=setTimeout(()=>{ flash.style.display="none"; },3500);
   }
 }
-function checkWords(wordList){
-  const joined=" "+wordList.join(" ")+" ";
+function checkWords(newWords, previousWords){
+  // Scan only finalized speech, and fire a cue only when its phrase ends in
+  // this result. This prevents a word lingering in the rolling transcript
+  // from replaying its sound effect on every later recognition update.
+  if(!newWords || !newWords.length) return;
+  const previous=previousWords||[];
+  const context=previous.concat(newWords);
+  const firstNewIndex=previous.length;
   (current.cues||[]).forEach(cue=>{
-    const cw=norm(cue.word); if(!cw) return;
-    if(joined.includes(" "+cw+" ")){
-      const now=Date.now();
-      if(!lastFired[cue.id] || now-lastFired[cue.id] > 2500){ lastFired[cue.id]=now; fireCue(cue); }
+    const phrase=norm(cue.word).split(/\s+/).filter(Boolean);
+    if(phrase.length<4) return;
+    const phraseLength=phrase.length;
+    for(let end=firstNewIndex+1;end<=context.length;end++){
+      const start=end-phraseLength;
+      if(start<0) continue;
+      if(end<=firstNewIndex) continue;
+      if(context.slice(start,end).join(" ")===phrase.join(" ")){
+        const now=Date.now();
+        if(!lastFired[cue.id] || now-lastFired[cue.id] > 2500){
+          lastFired[cue.id]=now;
+          fireCue(cue);
+        }
+        break;
+      }
     }
   });
 }
@@ -502,25 +595,28 @@ function setupRecognition(){
       const r=e.results[i];
       const words=norm(r[0].transcript).split(/\s+/).filter(Boolean);
       if(r.isFinal){
-        const prevLen=interimTracked[i]||0;
-        words.slice(prevLen).forEach(advanceHighlight);
-        committed=committed.concat(words).slice(-20);
+        // Advance only on finalized results. Advancing on interim text caused
+        // the final version of that same word to be skipped, especially with
+        // repeated words and long scripts.
+        words.forEach(advanceHighlight);
+        const oldCommitted=committed.slice();
+        checkWords(words, oldCommitted);
+        committed=oldCommitted.concat(words).slice(-120);
         delete interimTracked[i];
       }else{
-        const prevLen=interimTracked[i]||0;
-        words.slice(prevLen).forEach(advanceHighlight);
+        // Show interim recognition in the status bar, but don't move the
+        // cursor until the browser confirms the words as final.
         interimTracked[i]=words.length;
         interim=interim.concat(words);
       }
     }
     const full=committed.concat(interim).slice(-24);
     $("lastHeard").textContent=full.slice(-12).join(" ")||"—";
-    checkWords(full);
   };
   rec.onerror=e=>{
     console.warn("recognition error", e.error);
     if(e.error==="not-allowed" || e.error==="service-not-allowed"){ stopListening(); showError("Microphone access is blocked for this page. Check the lock/site-settings icon in your address bar, allow microphone access, then press Start listening again."); }
-    else if(e.error==="network"){ stopListening(); showError("Speech recognition service is unreachable here. If this page is open inside Claude, open it on your own site (e.g. GitHub Pages) in Chrome instead."); }
+    else if(e.error==="network"){ stopListening(); showError("Speech recognition service is unreachable. Open this page on a website such as GitHub Pages and try again in Chrome."); }
     else if(e.error==="no-speech"){ /* ignore, auto-restarts */ }
     else{ showError("Speech recognition stopped ("+e.error+")."); }
   };
@@ -548,7 +644,7 @@ async function startListening(){
   clearTimeout(watchdog);
   watchdog=setTimeout(()=>{
     if(listening && !gotFirstResult){
-      showError("The mic opened but no speech was recognized at all after 6 seconds — the recognition service itself isn't responding. If this page is open inside Claude, that's expected (its network policy blocks the speech service); download the file and host it elsewhere (e.g. GitHub Pages) and it should work in Chrome.");
+      showError("The microphone opened, but speech recognition did not respond after 6 seconds. Check microphone permissions and your internet connection, then try again in Chrome.");
     }
   },6000);
 }
@@ -563,21 +659,61 @@ function stopListening(){
 $("listenBtn").onclick=()=> listening?stopListening():startListening();
 if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){ $("supportNote").textContent="Live listening needs Chrome (desktop or Android)."; }
 
-// --- collaboration (PeerJS, two people direct peer-to-peer) ---
-let peer=null, conn=null;
+// --- collaboration: remember the room and reconnect after a page reload ---
+let peer=null, conn=null, participantName="", sessionRole="", sessionCode="", reconnectTimer=null;
+const SESSION_KEY="scriptinator-collaboration-session-v2";
+function readSession(){ try{return JSON.parse(localStorage.getItem(SESSION_KEY)||"null");}catch(e){return null;} }
+function saveSession(){
+  if(!sessionRole || !sessionCode || !participantName) return;
+  try{localStorage.setItem(SESSION_KEY,JSON.stringify({role:sessionRole,code:sessionCode,name:participantName}));}catch(e){}
+}
+function clearSession(){
+  try{localStorage.removeItem(SESSION_KEY);}catch(e){}
+  sessionRole=""; sessionCode="";
+  if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
+}
+function askParticipantName(){
+  const prior=readSession();
+  const answer=prompt("What is your name? Other people in this session will see it.", prior && prior.name || participantName || "");
+  if(answer===null) return false;
+  participantName=answer.trim();
+  if(!participantName){ showError("Please enter your name before starting or joining a session."); return false; }
+  $("myNameLabel").textContent="Your name: "+participantName;
+  return true;
+}
 function genCode(){ return Math.random().toString(36).slice(2,8).toUpperCase(); }
 function broadcastState(){
   if(conn && conn.open){
-    try{ conn.send({type:"state", name:current.name, text:current.text, cues:current.cues}); }catch(e){}
+    try{conn.send({type:"state",participantName,name:current.name,text:current.text,cues:current.cues});}catch(e){}
   }
+}
+function scheduleReconnect(){
+  if(reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer=setTimeout(()=>{
+    reconnectTimer=null;
+    if(!conn || !conn.open) restoreCollaboration(true);
+  },1800);
 }
 function setupConn(c){
   conn=c;
-  conn.on("open", ()=>{ $("collabStatus").textContent="Connected — editing together."; broadcastState(); });
-  conn.on("data", data=>{
-    if(data && data.type==="state"){
+  conn.on("open",()=>{
+    $("collabStatus").textContent="Connected — waiting for partner details…";
+    try{conn.send({type:"hello",participantName});}catch(e){}
+    broadcastState();
+  });
+  conn.on("data",data=>{
+    if(!data) return;
+    if(data.participantName && data.participantName!==participantName){
+      conn.peerName=data.participantName;
+      $("collabStatus").textContent="Connected — working with "+data.participantName+".";
+    }
+    if(data.type==="hello"){
+      try{conn.send({type:"hello",participantName});}catch(e){}
+      return;
+    }
+    if(data.type==="state"){
       applyingRemote=true;
-      current.name=data.name; current.text=data.text; current.cues=data.cues||[];
+      current.name=data.name||current.name; current.text=data.text||""; current.cues=data.cues||[];
       $("scriptName").value=current.name;
       scriptEl.innerHTML=current.text;
       renderCues(); renderCharacters();
@@ -585,42 +721,74 @@ function setupConn(c){
       applyingRemote=false;
     }
   });
-  conn.on("close", ()=>{ $("collabStatus").textContent="Your partner disconnected."; conn=null; });
-  conn.on("error", err=>{ showError("Collaboration connection error."); });
+  conn.on("close",()=>{
+    conn=null;
+    if(sessionRole){$("collabStatus").textContent="Connection interrupted — reconnecting…"; scheduleReconnect();}
+  });
+  conn.on("error",()=>{ if(sessionRole) scheduleReconnect(); });
 }
-function resetCollabUI(){
+function resetCollabUI(clearSaved=false){
   $("collabStatus").textContent="Not connected.";
   $("roomCode").style.display="none";
-  if(peer){ try{ peer.destroy(); }catch(e){} peer=null; }
+  if(peer){try{peer.destroy();}catch(e){} peer=null;}
   conn=null;
+  if(clearSaved) clearSession();
+}
+function startHost(code, isRestore=false){
+  if(typeof Peer==="undefined"){showError("Collaboration library did not load. Check your internet connection.");return;}
+  sessionRole="host"; sessionCode=code; saveSession();
+  try{peer=new Peer(code,{debug:0});}catch(e){scheduleReconnect();return;}
+  $("collabStatus").textContent=isRestore?"Restoring your room…":"Creating room…";
+  peer.on("open",()=>{
+    $("roomCode").style.display="block"; $("roomCode").textContent="Room code: "+code;
+    $("collabStatus").textContent="Room is ready. Share the code; reconnecting guests can rejoin.";
+  });
+  peer.on("connection",c=>setupConn(c));
+  peer.on("disconnected",()=>{if(peer)try{peer.reconnect();}catch(e){scheduleReconnect();}});
+  peer.on("error",err=>{
+    // An ID can still be occupied briefly after a reload. Retry with the same
+    // saved room code so the other participant can reconnect automatically.
+    if(err && (err.type==="unavailable-id" || err.type==="network")){
+      try{peer.destroy();}catch(e){} peer=null; scheduleReconnect();
+    }else if(err && err.type==="peer-unavailable") scheduleReconnect();
+    else{$("collabStatus").textContent="Room reconnect failed. Check your connection, then retry.";scheduleReconnect();}
+  });
+}
+function startGuest(code,isRestore=false){
+  if(typeof Peer==="undefined"){showError("Collaboration library did not load. Check your internet connection.");return;}
+  sessionRole="guest";sessionCode=code;saveSession();
+  try{peer=new Peer({debug:0});}catch(e){scheduleReconnect();return;}
+  $("collabStatus").textContent=isRestore?"Rejoining your room…":"Joining room…";
+  peer.on("open",()=>{
+    const c=peer.connect(code,{reliable:true});
+    c.on("open",()=>setupConn(c));
+    c.on("error",()=>scheduleReconnect());
+  });
+  peer.on("disconnected",()=>{if(peer)try{peer.reconnect();}catch(e){scheduleReconnect();}});
+  peer.on("error",()=>scheduleReconnect());
+}
+function restoreCollaboration(isRetry=false){
+  const saved=readSession();
+  if(!saved || !saved.role || !saved.code || !saved.name) return;
+  if(peer){try{peer.destroy();}catch(e){} peer=null;}
+  conn=null;
+  participantName=saved.name;sessionRole=saved.role;sessionCode=saved.code;
+  $("myNameLabel").textContent="Your name: "+participantName;
+  if(sessionRole==="host") startHost(sessionCode,true);
+  else startGuest(sessionCode,true);
 }
 $("hostBtn").onclick=()=>{
-  if(typeof Peer==="undefined"){ showError("Collaboration library didn't load — check your connection."); return; }
+  if(!askParticipantName())return;
   const code=genCode();
-  try{ peer=new Peer(code, {debug:0}); }catch(e){ showError("Couldn't start a collaboration session."); return; }
-  $("collabStatus").textContent="Connecting...";
-  const slow=setTimeout(()=>{ if(peer && !peer.open) $("collabStatus").textContent="Still connecting — first connection can take a bit longer."; },5000);
-  const timeout=setTimeout(()=>{ if(!peer || !peer.open){ clearTimeout(slow); showError("Couldn't reach the collaboration service after 20 seconds. Check your internet connection and try again."); resetCollabUI(); } },20000);
-  peer.on("open", ()=>{ clearTimeout(slow); clearTimeout(timeout); $("roomCode").style.display="block"; $("roomCode").textContent="Room code: "+code; $("collabStatus").textContent="Waiting for someone to join with this code..."; });
-  peer.on("connection", c=>setupConn(c));
-  peer.on("disconnected", ()=>{ if(peer) try{ peer.reconnect(); }catch(e){} });
-  peer.on("error", err=>{ clearTimeout(slow); clearTimeout(timeout); showError("Collaboration error: "+(err && err.type || err)); resetCollabUI(); });
+  try{localStorage.setItem(SESSION_KEY,JSON.stringify({role:"host",code,name:participantName}));}catch(e){}
+  startHost(code,false);
 };
 $("joinBtn").onclick=()=>{
-  if(typeof Peer==="undefined"){ showError("Collaboration library didn't load — check your connection."); return; }
+  if(!askParticipantName())return;
   const code=$("joinCode").value.trim().toUpperCase();
-  if(!code){ showError("Enter the room code your partner shared with you."); return; }
-  try{ peer=new Peer({debug:0}); }catch(e){ showError("Couldn't start a collaboration session."); return; }
-  $("collabStatus").textContent="Connecting...";
-  const slow=setTimeout(()=>{ if(!conn || !conn.open) $("collabStatus").textContent="Still connecting — first connection can take a bit longer."; },5000);
-  const timeout=setTimeout(()=>{ if(!conn || !conn.open){ clearTimeout(slow); showError("Couldn't connect to that room code after 20 seconds. Check the code and that your partner is still hosting, then try again."); resetCollabUI(); } },20000);
-  peer.on("open", ()=>{
-    const c=peer.connect(code, {reliable:true});
-    c.on("open", ()=>{ clearTimeout(slow); clearTimeout(timeout); setupConn(c); });
-    c.on("error", ()=>{ clearTimeout(slow); clearTimeout(timeout); showError("Couldn't connect to that room code."); resetCollabUI(); });
-  });
-  peer.on("disconnected", ()=>{ if(peer) try{ peer.reconnect(); }catch(e){} });
-  peer.on("error", err=>{ clearTimeout(slow); clearTimeout(timeout); showError("Collaboration error: "+(err && err.type || err)); resetCollabUI(); });
+  if(!code){showError("Enter the room code your partner shared with you.");return;}
+  try{localStorage.setItem(SESSION_KEY,JSON.stringify({role:"guest",code,name:participantName}));}catch(e){}
+  startGuest(code,false);
 };
 
 (async function init(){
@@ -628,6 +796,12 @@ $("joinBtn").onclick=()=>{
   if(!scripts.length){ current=blankScript(); current.updatedAt=Date.now(); scripts.push(current); await dbPut(current); }
   else{ scripts.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)); current=scripts[0]; }
   loadCurrent(); renderSidebar();
+  const savedSession=readSession();
+  if(savedSession && savedSession.role && savedSession.code && savedSession.name){
+    // Restore the same identity and room after reload. The other participant's
+    // page retries until the room becomes available again.
+    restoreCollaboration(true);
+  }
 })();
 })();
 </script>
