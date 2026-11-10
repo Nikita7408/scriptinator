@@ -33,6 +33,8 @@ header .byline{font-size:11px; color:var(--ink-dim);}
 #credits{padding:10px 14px; border-bottom:2px solid var(--line); background:var(--panel2); font-size:16px; font-weight:bold; line-height:1.9;}
 #credits a{color:var(--accent); text-decoration:underline; font-weight:normal;}
 #credits div{font-size:16px;}
+.donateBtn{display:inline-block; background:var(--accent); color:#fff !important; text-decoration:none !important; padding:6px 14px; border-radius:var(--radius); font-weight:bold;}
+.donateBtn:hover{opacity:.85;}
 #scriptName{background:var(--bg); border:1px solid var(--line); color:var(--ink); font-size:13px; padding:5px 7px; border-radius:var(--radius); min-width:150px;}
 .spacer{flex:1;}
 button{font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--panel2); color:var(--ink); padding:6px 11px; border-radius:var(--radius); font-size:12.5px;}
@@ -63,6 +65,7 @@ main{flex:1; display:flex; min-height:0;}
 #scriptText h2{font-size:16px; margin:10px 0 4px;}
 #scriptText .w.said{background:var(--panel2);}
 #scriptText .w.current{background:var(--accent); color:#fff;}
+#scriptText .line-current{background:rgba(21,85,179,.12); outline:1px dashed var(--accent);}
 .hint{font-size:11.5px; color:var(--ink-dim); margin-bottom:8px;}
 #selPopup{position:fixed; z-index:50; display:none;}
 #selPopup button{background:var(--accent); color:#fff; border-color:var(--accent); font-size:12px; padding:5px 9px;}
@@ -106,12 +109,15 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
   <button id="pdfBtn">Upload PDF</button>
   <input type="file" id="pdfInput" accept="application/pdf" hidden>
   <button id="listenBtn" class="primary">Start listening</button>
+  <button id="stopSoundBtn">Stop sound</button>
 </header>
 <div id="credits">
   <div>made by Nikita Levchenko</div>
   <div>GitHub profile: <a href="https://github.com/Nikita7408" target="_blank" rel="noopener">https://github.com/Nikita7408</a></div>
   <div>YouTube profile (mostly photography): <a href="https://www.youtube.com/@NikitaLevchenko-nl" target="_blank" rel="noopener">https://www.youtube.com/@NikitaLevchenko-nl</a></div>
   <div>Website: <a href="https://pz69kf.csb.app/" target="_blank" rel="noopener">https://pz69kf.csb.app/</a></div>
+  <div>Email: <a href="mailto:nlevchenko12345@gmail.com">nlevchenko12345@gmail.com</a></div>
+  <div><a id="donateBtn" class="donateBtn" href="https://donate.stripe.com/bJe5kw2j05zq2UUcu1bV603" target="_blank" rel="noopener">Donate</a></div>
 </div>
 <div id="errorBanner"><span id="errorText"></span><button id="errorClose">Dismiss</button></div>
 <div id="toolbar">
@@ -409,6 +415,9 @@ function advanceHighlight(spokenWord){
       wordSpans.forEach(s=>s.classList.remove("current"));
       wordSpans[k].classList.add("current","said");
       wordSpans[k].scrollIntoView({block:"center", behavior:"smooth"});
+      scriptEl.querySelectorAll(".line-current").forEach(el=>el.classList.remove("line-current"));
+      const block=wordSpans[k].closest("p,div,h2,li");
+      if(block && block!==scriptEl) block.classList.add("line-current");
       scriptCursor=k+1;
       return;
     }
@@ -416,11 +425,16 @@ function advanceHighlight(spokenWord){
 }
 
 // --- live listening & cue matching ---
-let recognition=null, listening=false, committed=[], lastFired={};
+let recognition=null, listening=false, committed=[], lastFired={}, interimTracked={}, watchdog=null, gotFirstResult=false, activeAudio=null;
+function stopAllSound(){
+  if(activeAudio){ try{ activeAudio.pause(); activeAudio.currentTime=0; }catch(e){} activeAudio=null; }
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+}
+$("stopSoundBtn").onclick=stopAllSound;
 function fireCue(cue){
   const el=$("cue-"+cue.id);
   if(el){ el.classList.add("fired"); setTimeout(()=>el.classList.remove("fired"),1200); }
-  if(cue.audioData){ try{ new Audio(cue.audioData).play().catch(()=>{}); }catch(e){} }
+  if(cue.audioData){ try{ stopAllSound(); activeAudio=new Audio(cue.audioData); activeAudio.play().catch(()=>{}); }catch(e){} }
   if(cue.imageData){
     const flash=$("imgFlash"); $("imgFlashImg").src=cue.imageData;
     flash.style.display="block"; clearTimeout(flash._t);
@@ -443,12 +457,22 @@ function setupRecognition(){
   const rec=new SR();
   rec.continuous=true; rec.interimResults=true; rec.lang="en-US";
   rec.onresult=e=>{
+    gotFirstResult=true; clearTimeout(watchdog);
     let interim=[];
     for(let i=e.resultIndex;i<e.results.length;i++){
       const r=e.results[i];
       const words=norm(r[0].transcript).split(/\s+/).filter(Boolean);
-      if(r.isFinal){ committed=committed.concat(words).slice(-20); words.forEach(advanceHighlight); }
-      else{ interim=interim.concat(words); if(words.length) advanceHighlight(words[words.length-1]); }
+      if(r.isFinal){
+        const prevLen=interimTracked[i]||0;
+        words.slice(prevLen).forEach(advanceHighlight);
+        committed=committed.concat(words).slice(-20);
+        delete interimTracked[i];
+      }else{
+        const prevLen=interimTracked[i]||0;
+        words.slice(prevLen).forEach(advanceHighlight);
+        interimTracked[i]=words.length;
+        interim=interim.concat(words);
+      }
     }
     const full=committed.concat(interim).slice(-24);
     $("lastHeard").textContent=full.slice(-12).join(" ")||"—";
@@ -476,12 +500,18 @@ async function startListening(){
       return;
     }
   }
-  listening=true; committed=[]; lastFired={};
+  listening=true; committed=[]; lastFired={}; interimTracked={}; gotFirstResult=false;
   wrapWordsForHighlight();
   scriptEl.contentEditable="false";
   try{ recognition.start(); }catch(e){}
   $("listenBtn").textContent="Stop listening"; $("listenBtn").classList.add("live");
   $("liveLabel").innerHTML='<span class="live">LISTENING</span>';
+  clearTimeout(watchdog);
+  watchdog=setTimeout(()=>{
+    if(listening && !gotFirstResult){
+      showError("The mic opened but no speech was recognized at all after 6 seconds — the recognition service itself isn't responding. If this page is open inside Claude, that's expected (its network policy blocks the speech service); download the file and host it elsewhere (e.g. Cloudflare Pages) and it should work in Chrome.");
+    }
+  },6000);
 }
 function stopListening(){
   listening=false;
