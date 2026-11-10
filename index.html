@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Scriptinator — made by Nikita Levchenko</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
 :root{
   --bg:#ffffff; --panel:#fafafa; --panel2:#f0f0f0; --line:#999;
@@ -21,12 +22,7 @@
 *{box-sizing:border-box;}
 html,body{height:100%;}
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
-body{
-  margin:0; background:var(--bg); color:var(--ink);
-  font-family:Arial,Helvetica,sans-serif; font-size:14px;
-  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
-  display:flex; flex-direction:column; height:100%;
-}
+body{margin:0; background:var(--bg); color:var(--ink); font-family:Arial,Helvetica,sans-serif; font-size:14px; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); display:flex; flex-direction:column; height:100%;}
 header{padding:10px 14px; border-bottom:2px solid var(--line); background:var(--panel); display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;}
 header h1{font-size:18px; margin:0; font-weight:bold;}
 header .byline{font-size:11px; color:var(--ink-dim);}
@@ -50,13 +46,18 @@ button:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
 #toolbar{display:flex; gap:4px; padding:6px 14px; border-bottom:1px solid var(--line); background:var(--panel); flex-wrap:wrap;}
 #toolbar button{min-width:30px; font-weight:bold;}
 main{flex:1; display:flex; min-height:0;}
-#sidebar{width:190px; border-right:1px solid var(--line); background:var(--panel); padding:12px; overflow-y:auto; flex-shrink:0;}
+#sidebar{width:200px; border-right:1px solid var(--line); background:var(--panel); padding:12px; overflow-y:auto; flex-shrink:0;}
 #sidebar h2,aside h2{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); margin:14px 0 8px;}
 #sidebar h2:first-child{margin-top:0;}
 .scriptItem{padding:7px 8px; border-radius:var(--radius); cursor:pointer; font-size:12.5px; margin-bottom:3px; display:flex; justify-content:space-between; gap:6px; border:1px solid transparent;}
 .scriptItem:hover{border-color:var(--line);}
 .scriptItem.active{background:var(--panel2); border-color:var(--line); font-weight:bold;}
 .scriptItem .del{font-size:11px; color:var(--ink-dim); background:none; border:none; padding:0;}
+#collabBox{font-size:11.5px;}
+#collabBox input[type=text]{width:100%; font-size:12px; padding:5px 6px; border:1px solid var(--line); background:var(--bg); color:var(--ink); border-radius:var(--radius); margin-bottom:5px;}
+#collabBox button{width:100%; margin-bottom:5px;}
+#roomCode{font-weight:bold; font-size:14px; letter-spacing:.1em; padding:5px; background:var(--panel2); text-align:center; border-radius:var(--radius); margin-bottom:5px; word-break:break-all;}
+#collabStatus{color:var(--ink-dim);}
 #editorWrap{flex:1; display:flex; flex-direction:column; min-width:0; padding:14px 18px; overflow-y:auto; position:relative;}
 #scriptText{flex:1; min-height:280px; background:var(--bg); border:1px solid var(--line); color:var(--ink); border-radius:var(--radius); padding:14px; font-size:15px; line-height:1.7; font-family:"Courier New",monospace; overflow-y:auto; white-space:pre-wrap;}
 #scriptText[contenteditable="false"]{background:var(--panel);}
@@ -79,7 +80,11 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
 #voiceBrowser .vr button{font-size:10.5px; padding:2px 7px;}
 .cue{border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px; margin-bottom:6px; background:var(--panel2);}
 .cue .word{font-weight:bold; font-size:13px;}
-.cue .meta{font-size:11px; color:var(--ink-dim); margin-top:2px;}
+.soundBar{display:flex; align-items:center; gap:6px; margin-top:7px; background:var(--bg); border:1px solid var(--line); border-radius:12px; padding:4px 8px;}
+.soundBar .sbPlay{border-radius:50%; width:24px; height:24px; padding:0; font-size:10px; flex-shrink:0;}
+.soundBar .sbRange{flex:1; accent-color:var(--accent); height:3px;}
+.soundBar .sbTime{font-size:10px; color:var(--ink-dim); white-space:nowrap; min-width:62px; text-align:right;}
+.cue .meta{font-size:11px; color:var(--ink-dim); margin-top:5px;}
 .cue .row{display:flex; gap:6px; margin-top:7px;}
 .cue button{padding:3px 8px; font-size:11px;}
 .cue.fired{border-color:var(--accent); border-width:2px;}
@@ -95,7 +100,7 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
 .credit{font-size:11px; color:var(--ink-dim);}
 @media (max-width: 820px){
   main{flex-direction:column;}
-  #sidebar,aside{width:auto; max-height:180px;}
+  #sidebar,aside{width:auto; max-height:200px;}
   #sidebar{order:2;} #editorWrap{order:1;} aside{order:3;}
 }
 </style>
@@ -132,6 +137,14 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
 </div>
 <main>
   <div id="sidebar">
+    <h2>Collaborate</h2>
+    <div id="collabBox">
+      <button id="hostBtn">Host a session</button>
+      <div id="roomCode" style="display:none;"></div>
+      <input type="text" id="joinCode" placeholder="Enter a room code">
+      <button id="joinBtn">Join session</button>
+      <div id="collabStatus">Not connected.</div>
+    </div>
     <h2>Scripts</h2>
     <div id="scriptList"></div>
     <button id="newScriptBtn" style="width:100%; margin-top:8px;">New script</button>
@@ -180,10 +193,13 @@ async function dbDel(id){ try{ const db=await openDB(); return new Promise((res,
 
 const $ = id => document.getElementById(id);
 const scriptEl = $("scriptText");
-let scripts = [], current = null, saveTimer = null;
+let scripts = [], current = null, saveTimer = null, applyingRemote=false;
 
 function blankScript(){ return { id:"s"+Date.now()+Math.random().toString(36).slice(2,7), name:"Untitled script", text:"", cues:[], voiceMap:{} }; }
-function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ if(current) dbPut(current); },500); }
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>{ if(current) dbPut(current); if(!applyingRemote) broadcastState(); },500);
+}
 function showError(msg){ $("errorText").textContent=msg; $("errorBanner").style.display="flex"; }
 $("errorClose").onclick=()=>{ $("errorBanner").style.display="none"; };
 
@@ -259,7 +275,7 @@ function renderCharacters(){
     top.appendChild(label); top.appendChild(btn); row.appendChild(top);
     const sel=document.createElement("select");
     if(voices.length){
-      voices.forEach((v,i)=>{ const opt=document.createElement("option"); opt.value=v.voiceURI; opt.textContent=v.name+" ("+v.lang+")"; sel.appendChild(opt); });
+      voices.forEach(v=>{ const opt=document.createElement("option"); opt.value=v.voiceURI; opt.textContent=v.name+" ("+v.lang+")"; sel.appendChild(opt); });
       const saved=current.voiceMap[key];
       if(saved && voices.some(v=>v.voiceURI===saved)) sel.value=saved;
       sel.onchange=()=>{ current.voiceMap[key]=sel.value; current.updatedAt=Date.now(); scheduleSave(); };
@@ -278,17 +294,36 @@ function renderCharacters(){
   });
 }
 
+function fmtTime(sec){ if(!isFinite(sec)) sec=0; const m=Math.floor(sec/60), s=Math.floor(sec%60); return m+":"+(s<10?"0":"")+s; }
+
 function renderCues(){
-  const list=$("cueList"); list.innerHTML="";
+  const list=$("cueList"); list.innerHTML=""; soundBars=[];
   if(!current.cues || !current.cues.length){ const p=document.createElement("div"); p.className="hint"; p.textContent="No cues yet. Add a trigger word below, or select text in the script."; list.appendChild(p); return; }
   current.cues.forEach(c=>{
     const div=document.createElement("div"); div.className="cue"; div.id="cue-"+c.id;
     const w=document.createElement("div"); w.className="word"; w.textContent='"'+c.word+'"'; div.appendChild(w);
+    if(c.audioData){
+      const bar=document.createElement("div"); bar.className="soundBar";
+      const playBtn=document.createElement("button"); playBtn.className="sbPlay"; playBtn.textContent="▸"; playBtn.title="Play";
+      const range=document.createElement("input"); range.type="range"; range.min=0; range.max=100; range.value=0; range.className="sbRange";
+      const time=document.createElement("span"); time.className="sbTime"; time.textContent="0:00 / 0:00";
+      bar.appendChild(playBtn); bar.appendChild(range); bar.appendChild(time);
+      div.appendChild(bar);
+      const a=new Audio(c.audioData);
+      soundBars.push({audio:a, playBtn});
+      a.addEventListener("loadedmetadata", ()=>{ time.textContent=fmtTime(0)+" / "+fmtTime(a.duration); });
+      a.addEventListener("timeupdate", ()=>{ if(a.duration) range.value=(a.currentTime/a.duration)*100; time.textContent=fmtTime(a.currentTime)+" / "+fmtTime(a.duration); });
+      a.addEventListener("ended", ()=>{ playBtn.textContent="▸"; range.value=0; });
+      playBtn.onclick=()=>{
+        if(a.paused){ stopAllSound(); activeAudio=a; a.play(); playBtn.textContent="∥"; }
+        else{ a.pause(); playBtn.textContent="▸"; }
+      };
+      range.oninput=()=>{ if(a.duration) a.currentTime=(range.value/100)*a.duration; };
+    }
     const meta=document.createElement("div"); meta.className="meta";
-    const parts=[]; if(c.audioData) parts.push("sound"); if(c.imageData) parts.push("image");
-    meta.textContent=parts.length?parts.join(" + "):"no media attached"; div.appendChild(meta);
+    meta.textContent=c.imageData?"image also attached":(c.audioData?"":"no media attached"); div.appendChild(meta);
     const row=document.createElement("div"); row.className="row";
-    const test=document.createElement("button"); test.textContent="Test"; test.onclick=()=>fireCue(c);
+    const test=document.createElement("button"); test.textContent="Test cue"; test.onclick=()=>fireCue(c);
     const rm=document.createElement("button"); rm.textContent="Remove"; rm.className="danger";
     rm.onclick=()=>{ current.cues=current.cues.filter(x=>x.id!==c.id); scheduleSave(); renderCues(); };
     row.appendChild(test); row.appendChild(rm); div.appendChild(row); list.appendChild(div);
@@ -424,13 +459,17 @@ function advanceHighlight(spokenWord){
   }
 }
 
-// --- live listening & cue matching ---
-let recognition=null, listening=false, committed=[], lastFired={}, interimTracked={}, watchdog=null, gotFirstResult=false, activeAudio=null;
+// --- sound control ---
+let soundBars=[], activeAudio=null;
 function stopAllSound(){
   if(activeAudio){ try{ activeAudio.pause(); activeAudio.currentTime=0; }catch(e){} activeAudio=null; }
+  soundBars.forEach(b=>{ try{ b.audio.pause(); b.audio.currentTime=0; }catch(e){} b.playBtn.textContent="▸"; });
   if('speechSynthesis' in window) speechSynthesis.cancel();
 }
 $("stopSoundBtn").onclick=stopAllSound;
+
+// --- live listening & cue matching ---
+let recognition=null, listening=false, committed=[], lastFired={}, interimTracked={}, watchdog=null, gotFirstResult=false;
 function fireCue(cue){
   const el=$("cue-"+cue.id);
   if(el){ el.classList.add("fired"); setTimeout(()=>el.classList.remove("fired"),1200); }
@@ -481,7 +520,7 @@ function setupRecognition(){
   rec.onerror=e=>{
     console.warn("recognition error", e.error);
     if(e.error==="not-allowed" || e.error==="service-not-allowed"){ stopListening(); showError("Microphone access is blocked for this page. Check the lock/site-settings icon in your address bar, allow microphone access, then press Start listening again."); }
-    else if(e.error==="network"){ stopListening(); showError("Speech recognition service is unreachable here. If this page is open inside Claude, open it on your own site (e.g. Cloudflare Pages) in Chrome instead."); }
+    else if(e.error==="network"){ stopListening(); showError("Speech recognition service is unreachable here. If this page is open inside Claude, open it on your own site (e.g. GitHub Pages) in Chrome instead."); }
     else if(e.error==="no-speech"){ /* ignore, auto-restarts */ }
     else{ showError("Speech recognition stopped ("+e.error+")."); }
   };
@@ -509,7 +548,7 @@ async function startListening(){
   clearTimeout(watchdog);
   watchdog=setTimeout(()=>{
     if(listening && !gotFirstResult){
-      showError("The mic opened but no speech was recognized at all after 6 seconds — the recognition service itself isn't responding. If this page is open inside Claude, that's expected (its network policy blocks the speech service); download the file and host it elsewhere (e.g. Cloudflare Pages) and it should work in Chrome.");
+      showError("The mic opened but no speech was recognized at all after 6 seconds — the recognition service itself isn't responding. If this page is open inside Claude, that's expected (its network policy blocks the speech service); download the file and host it elsewhere (e.g. GitHub Pages) and it should work in Chrome.");
     }
   },6000);
 }
@@ -523,6 +562,55 @@ function stopListening(){
 }
 $("listenBtn").onclick=()=> listening?stopListening():startListening();
 if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){ $("supportNote").textContent="Live listening needs Chrome (desktop or Android)."; }
+
+// --- collaboration (PeerJS, two people direct peer-to-peer) ---
+let peer=null, conn=null;
+function genCode(){ return Math.random().toString(36).slice(2,8).toUpperCase(); }
+function broadcastState(){
+  if(conn && conn.open){
+    try{ conn.send({type:"state", name:current.name, text:current.text, cues:current.cues}); }catch(e){}
+  }
+}
+function setupConn(c){
+  conn=c;
+  conn.on("open", ()=>{ $("collabStatus").textContent="Connected — editing together."; broadcastState(); });
+  conn.on("data", data=>{
+    if(data && data.type==="state"){
+      applyingRemote=true;
+      current.name=data.name; current.text=data.text; current.cues=data.cues||[];
+      $("scriptName").value=current.name;
+      scriptEl.innerHTML=current.text;
+      renderCues(); renderCharacters();
+      dbPut(current);
+      applyingRemote=false;
+    }
+  });
+  conn.on("close", ()=>{ $("collabStatus").textContent="Your partner disconnected."; conn=null; });
+  conn.on("error", err=>{ showError("Collaboration connection error."); });
+}
+$("hostBtn").onclick=()=>{
+  if(typeof Peer==="undefined"){ showError("Collaboration library didn't load — check your connection."); return; }
+  const code=genCode();
+  try{ peer=new Peer(code); }catch(e){ showError("Couldn't start a collaboration session."); return; }
+  $("roomCode").style.display="block"; $("roomCode").textContent="Room code: "+code;
+  $("collabStatus").textContent="Waiting for someone to join with this code...";
+  peer.on("open", ()=>{});
+  peer.on("connection", c=>setupConn(c));
+  peer.on("error", err=>{ showError("Collaboration error: "+(err && err.type || err)+". If this page is open inside Claude, this won't connect — try it on GitHub Pages instead."); });
+};
+$("joinBtn").onclick=()=>{
+  if(typeof Peer==="undefined"){ showError("Collaboration library didn't load — check your connection."); return; }
+  const code=$("joinCode").value.trim().toUpperCase();
+  if(!code){ showError("Enter the room code your partner shared with you."); return; }
+  try{ peer=new Peer(); }catch(e){ showError("Couldn't start a collaboration session."); return; }
+  $("collabStatus").textContent="Connecting...";
+  peer.on("open", ()=>{
+    const c=peer.connect(code);
+    c.on("open", ()=>setupConn(c));
+    c.on("error", ()=>showError("Couldn't connect to that room code."));
+  });
+  peer.on("error", err=>{ showError("Collaboration error: "+(err && err.type || err)+". If this page is open inside Claude, this won't connect — try it on GitHub Pages instead."); });
+};
 
 (async function init(){
   scripts=await dbAll();
