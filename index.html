@@ -19,6 +19,11 @@
     color-scheme: dark;
   }
 }
+:root[data-theme="dark"]{
+  --bg:#111; --panel:#181818; --panel2:#222; --line:#555;
+  --ink:#eee; --ink-dim:#999; --accent:#6fa3f7; --danger:#ff8a73;
+  color-scheme: dark;
+}
 *{box-sizing:border-box;}
 html,body{height:100%;}
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
@@ -106,6 +111,11 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
   #sidebar,aside{width:auto; max-height:200px;}
   #sidebar{order:2;} #editorWrap{order:1;} aside{order:3;}
 }
+body.focus-mode #sidebar,body.focus-mode aside{display:none;}
+body.focus-mode #editorWrap{padding:10px 4vw;}
+body.focus-mode #scriptText{font-size:17px; max-width:900px; margin:0 auto; width:100%;}
+#wordCount{font-size:11.5px; color:var(--ink-dim); margin-top:6px; text-align:right;}
+#themeBtn{min-width:34px;}
 </style>
 </head>
 <body>
@@ -118,6 +128,9 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
   <input type="file" id="pdfInput" accept="application/pdf" hidden>
   <button id="listenBtn" class="primary">Start listening</button>
   <button id="stopSoundBtn">Stop sound</button>
+  <button id="downloadBtn">Download .txt</button>
+  <button id="focusBtn">Full screen</button>
+  <button id="themeBtn" title="Toggle light/dark">Theme</button>
 </header>
 <div id="credits">
   <div>made by Nikita Levchenko</div>
@@ -155,6 +168,7 @@ aside{width:300px; border-left:1px solid var(--line); background:var(--panel); p
   <div id="editorWrap">
     <div class="hint">Autosaves in this browser. Use a line like <b>Nikita: hello</b> for dialogue — this detects "Nikita" as a character. Select any text to add it as a sound cue. While listening, the editor locks and highlights words as speech recognition confirms them.</div>
     <div id="scriptText" contenteditable="true" data-placeholder="Write or paste your script here..."></div>
+    <div id="wordCount">0 words</div>
   </div>
   <aside>
     <h2>Characters / voiceover test</h2>
@@ -233,9 +247,16 @@ function loadCurrent(){
   scriptEl.innerHTML=current.text||"";
   renderCharacters();
   renderCues();
+  updateWordCount();
 }
 
 function getPlainText(){ return scriptEl.innerText || ""; }
+function updateWordCount(){
+  const t=getPlainText().trim();
+  const words=t?t.split(/\s+/).filter(Boolean).length:0;
+  const chars=t.length;
+  $("wordCount").textContent=words+" word"+(words===1?"":"s")+" · "+chars+" character"+(chars===1?"":"s");
+}
 
 // --- voices ---
 let voices=[];
@@ -384,7 +405,7 @@ function renderCues(){
 function fileToDataURL(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
 
 $("scriptName").addEventListener("input", e=>{ current.name=e.target.value; current.updatedAt=Date.now(); scheduleSave(); renderSidebar(); });
-scriptEl.addEventListener("input", ()=>{ if(scriptEl.contentEditable==="false") return; current.text=scriptEl.innerHTML; current.updatedAt=Date.now(); scheduleSave(); renderCharacters(); });
+scriptEl.addEventListener("input", ()=>{ if(scriptEl.contentEditable==="false") return; current.text=scriptEl.innerHTML; current.updatedAt=Date.now(); scheduleSave(); renderCharacters(); updateWordCount(); });
 
 $("newScriptBtn").onclick=()=>{ const s=blankScript(); s.updatedAt=Date.now(); scripts.push(s); dbPut(s); current=s; loadCurrent(); renderSidebar(); };
 
@@ -658,6 +679,43 @@ function stopListening(){
 }
 $("listenBtn").onclick=()=> listening?stopListening():startListening();
 if(!(window.SpeechRecognition||window.webkitSpeechRecognition)){ $("supportNote").textContent="Live listening needs Chrome (desktop or Android)."; }
+
+// --- focus (almost full-screen editor) mode ---
+function setFocusMode(on){
+  document.body.classList.toggle("focus-mode", on);
+  $("focusBtn").textContent = on ? "Exit full screen" : "Full screen";
+}
+$("focusBtn").onclick=()=> setFocusMode(!document.body.classList.contains("focus-mode"));
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && document.body.classList.contains("focus-mode")) setFocusMode(false); });
+
+// --- theme toggle ---
+const THEME_KEY="scriptinator-theme";
+function applyTheme(t){
+  if(t==="light" || t==="dark") document.documentElement.dataset.theme=t;
+  else delete document.documentElement.dataset.theme;
+}
+(function initTheme(){
+  let saved=null; try{ saved=localStorage.getItem(THEME_KEY); }catch(e){}
+  applyTheme(saved);
+})();
+$("themeBtn").onclick=()=>{
+  const current_=document.documentElement.dataset.theme;
+  const next = current_==="light" ? "dark" : current_==="dark" ? null : "light";
+  applyTheme(next);
+  try{ if(next) localStorage.setItem(THEME_KEY,next); else localStorage.removeItem(THEME_KEY); }catch(e){}
+};
+
+// --- download script as text ---
+$("downloadBtn").onclick=()=>{
+  const text=getPlainText();
+  if(!text.trim()){ showError("Nothing to download yet — write or paste a script first."); return; }
+  const blob=new Blob([text], {type:"text/plain"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=(current.name||"script").replace(/[^\w\- ]/g,"").trim()+".txt";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+};
 
 // --- collaboration: remember the room and reconnect after a page reload ---
 let peer=null, conn=null, participantName="", sessionRole="", sessionCode="", reconnectTimer=null;
